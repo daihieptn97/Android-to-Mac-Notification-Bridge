@@ -1,19 +1,114 @@
 <?xml version="1.0" encoding="utf-8"?>
-<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:app="http://schemas.android.com/apk/res-auto"
+<androidx.core.widget.NestedScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
     android:id="@+id/main"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    tools:context=".MainActivity">
+    android:padding="24dp"
+    tools:context=".ui.MainActivity">
 
-    <TextView
-        android:layout_width="wrap_content"
+    <LinearLayout
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Hello World!"
-        app:layout_constraintBottom_toBottomOf="parent"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent" />
+        android:orientation="vertical"
+    android:gravity="center_horizontal"
+    android:paddingBottom="32dp"
+    android:paddingTop="16dp">
 
-</androidx.constraintlayout.widget.ConstraintLayout>
+        <TextView
+            android:id="@+id/textDashboardTitle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/dashboard_title"
+            android:textAppearance="@style/TextAppearance.Material3.TitleLarge" />
+
+        <TextView
+            android:id="@+id/textStatusLabel"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/bridge_status_label"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/textStatusValue"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textAppearance="@style/TextAppearance.Material3.BodyLarge"
+            tools:text="DISCOVERING" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/bridge_message_label"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/textMessageValue"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            tools:text="Searching for Mac server" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/server_label"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/textServerValue"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            tools:text="http://192.168.1.20:8080/notify" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/config_state_label"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/textConfigStateValue"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            tools:text="Config missing" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/sent_count_label"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/textSentCountValue"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            tools:text="5" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/buttonOpenSetup"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:text="@string/button_open_setup" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/buttonRetryDiscovery"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/button_retry_discovery" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/buttonNotificationPermission"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/button_notification_permission" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/buttonSendTestNotification"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/button_send_test_notification" />
+
+    </LinearLayout>
+
+</androidx.core.widget.NestedScrollView>

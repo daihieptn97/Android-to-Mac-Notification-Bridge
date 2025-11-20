@@ -1,3 +1,36 @@
 <resources>
     <string name="app_name">Android-to-Mac-Notification-Bridge</string>
+    <string name="dashboard_title">Android ⇄ Mac Bridge</string>
+    <string name="bridge_status_label">Bridge status</string>
+    <string name="bridge_message_label">Last message</string>
+    <string name="server_label">Server URL</string>
+    <string name="config_state_label">Configuration</string>
+    <string name="sent_count_label">Sent notifications</string>
+    <string name="button_open_setup">Scan QR Configuration</string>
+    <string name="button_retry_discovery">Retry Discovery</string>
+    <string name="button_notification_permission">Notification Access Settings</string>
+    <string name="button_send_test_notification">Send Test Notification</string>
+    <string name="button_close_setup">Close</string>
+    <string name="setup_instruction">Aim the camera at the QR code displayed on your Mac to import the bridge keys.</string>
+    <string name="status_no_message">No status message</string>
+    <string name="server_unknown">Unknown</string>
+    <string name="config_ready">Ready</string>
+    <string name="config_missing">Missing – scan QR to continue</string>
+    <string name="status_discovering">Discovering Mac server…</string>
+    <string name="status_connected_with">Resolved %1$s</string>
+    <string name="camera_permission_denied">Camera permission denied</string>
+    <string name="camera_setup_error">Unable to start camera</string>
+    <string name="barcode_error">Unable to read QR code</string>
+    <string name="scanning_qr_hint">Scanning for QR code…</string>
+    <string name="invalid_qr_content">Invalid QR content</string>
+    <string name="config_saved_success">Configuration saved!</string>
+    <string name="status_sending_test">Sending test notification…</string>
+    <string name="status_test_missing_config">Add configuration before sending a test.</string>
+    <string name="status_test_missing_server">Server not resolved yet. Start discovery and try again.</string>
+    <string name="status_test_notification_success">Test notification sent successfully.</string>
+    <string name="status_test_notification_error">Test notification failed: %1$s</string>
+    <string name="toast_test_notification_sent">Test notification sent!</string>
+    <string name="toast_test_notification_failed">Failed to send test: %1$s</string>
+    <string name="test_notification_title">Android Bridge Test</string>
+    <string name="test_notification_text">If you can read this on your Mac, the bridge works!</string>
 </resources>

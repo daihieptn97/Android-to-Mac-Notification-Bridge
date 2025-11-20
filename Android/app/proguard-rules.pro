@@ -19,3 +19,14 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+
+# OkHttp
+-dontwarn okhttp3.**
+-keep class okhttp3.** { *; }
+
+# ML Kit
+-keep class com.google.mlkit.** { *; }
+
+# Gson (reserved for future JSON serialization needs)
+-keepattributes Signature
+-keep class com.google.gson.** { *; }
