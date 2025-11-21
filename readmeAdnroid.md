@@ -160,3 +160,55 @@ Luồng tổng quát (high-level):
 - `ServiceDiscoveryManager` → resolve URL → listener cập nhật `ConfigRepository` (UI hoặc service nhận URL và lưu lại).
 
 Khi sửa đổi chức năng, hãy nhớ phân tách rõ trách nhiệm: lưu/trạng thái (`ConfigRepository`), khám phá (`ServiceDiscoveryManager`), mã hóa (`EncryptionHelper`/models), mạng (`NotificationSender`) và giao diện/quyền (`MainActivity`/`SetupActivity`).
+
+## **Cơ chế truyền nhận & Mã hóa (chi tiết kỹ thuật)**
+
+Phần này mô tả cụ thể luồng dữ liệu từ một thông báo hệ thống tới khi nó được mã hóa và gửi lên macOS server, dựa trên `NotificationPayload.java`, `EncryptionHelper.java`, `EncryptedPayload.java` và `NotificationSender.java`.
+
+- **Xây dựng payload (theo `NotificationPayload`)**:
+   - Khi `NotificationBridgeService` nhận `StatusBarNotification`, nó gọi `NotificationPayload.from(sbn)`.
+   - Các trường được trích xuất và đưa vào JSON: `packageName`, `title`, `text`, `category`, `channelId`, `ongoing`, `timestamp`.
+   - `NotificationPayload.toJson()` trả về JSON chuẩn dùng làm plaintext để mã hóa.
+
+- **Mã hóa (theo `EncryptionHelper`)**:
+   - Thuật toán: AES-256-GCM, transformation `AES/GCM/NoPadding`.
+   - Khóa: base64 được lưu trong `ConfigRepository`; khi giải base64 ra phải có đúng 32 bytes (AES-256). `ConfigRepository.isValidKey()` kiểm tra kích thước này.
+   - Nonce (IV): 12 byte random được sinh cho mỗi payload (bảo đảm không tái sử dụng nonce với cùng key).
+   - Tag: GCM authentication tag 16 byte (128 bit) được tách ra từ kết quả của cipher.
+   - Kết quả: `ciphertext` và `tag` (và `nonce`) được mã hóa Base64 (NO_WRAP) và đóng gói thành `EncryptedPayload`.
+
+- **Định dạng gửi (theo `EncryptedPayload.toJson()`)**:
+   - JSON gửi lên server có 3 trường: `nonce`, `ciphertext`, `tag` (tất cả Base64 strings).
+   - Ví dụ:
+      {
+         "nonce": "Base64(...)",
+         "ciphertext": "Base64(...)",
+         "tag": "Base64(...)"
+      }
+
+- **Gửi lên server (theo `NotificationSender`)**:
+   - URL: `ServiceDiscoveryManager` resolve service thành `http://<host>:<port>/notify` và `ConfigRepository` lưu URL này.
+   - Yêu cầu HTTP: POST JSON (body = `EncryptedPayload.toJson()`), headers:
+      - `Content-Type: application/json`
+      - `Authorization: Bearer <apiKey>` (lấy từ `ConfigRepository`)
+   - OkHttp client cấu hình timeout 3s (connect/read/write) và chạy call trên một executor nền.
+   - Phản hồi: nếu HTTP trả về thành công (2xx) thì gọi `onSuccess()`, ngược lại `onError(IOException("HTTP " + code))`.
+
+- **Luồng xử lý & cập nhật trạng thái**:
+   - `NotificationBridgeService` hoặc `MainActivity` (khi gửi test) thực hiện:
+      1. Kiểm tra `ConfigRepository.hasValidConfig()` (api key + encryption key hợp lệ).
+      2. Lấy `serverUrl`; nếu không có, khởi động discovery.
+      3. Tạo payload JSON (từ `NotificationPayload` hoặc `buildTestPayload()`), gọi `EncryptionHelper.encrypt()`.
+      4. Gọi `NotificationSender.send(url, apiKey, encryptedPayload, callback)`.
+      5. Callback `onSuccess()` → `ConfigRepository.incrementSentCount()` và `updateStatus(CONNECTED, ...)`.
+      6. Callback `onError()` → `updateStatus(ERROR, message)`, có thể `clearServerUrl()` và bắt đầu discovery lại.
+
+- **Xử lý lỗi & an toàn**:
+   - Nếu khóa base64 không đúng (không đủ 32 bytes) `EncryptionHelper` ném `IllegalArgumentException` — caller (service/UI) phải catch để báo lỗi người dùng và cập nhật `BridgeState`.
+   - Nếu `EncryptedSharedPreferences` không khả dụng, `ConfigRepository` fallback về `SharedPreferences` thường và ghi log (không ghi plaintext key ra log).
+   - Không log trực tiếp khóa hoặc plaintext payload; chỉ log thông tin đủ để debug (messsage lỗi, mã HTTP, stacktrace nếu cần trong dev builds).
+
+- **Gửi thêm thông tin thiết bị khi kết nối**:
+   - Khi discovery resolve thành công URL, `MainActivity` (hoặc service) có thể gửi một payload `device info` (manufacturer, model, sdkInt, androidId, appVersion, timestamp) cũng theo chu trình mã hóa ở trên — server có thể lưu mapping device ↔ api_key.
+
+Ghi chú ngắn: nếu bạn muốn gửi thông tin mạng (SSID, địa chỉ IP) hoặc các trường nhạy cảm hơn, cần khai báo và yêu cầu thêm permission tương ứng (ví dụ `ACCESS_FINE_LOCATION` để đọc SSID trên một số phiên bản Android) và cập nhật chính sách quyền trong UI/tài liệu.
