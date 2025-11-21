@@ -5,8 +5,6 @@
 **Ngày tạo:** 2025-11-19  
 **Phiên bản:** 1.0.0
 
-- git Mac os: https://github.com/daihieptn97/AndroidtoMacNotificationMacOs
-- git Android: https://github.com/daihieptn97/AndroidtoMacNotificationClient
 ---
 
 ## 📋 Mục Lục
