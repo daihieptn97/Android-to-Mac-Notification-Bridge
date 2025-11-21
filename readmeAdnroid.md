@@ -2,6 +2,18 @@
 
 Tài liệu này dành cho đội kỹ thuật Android của dự án **Android to Mac Notification Bridge**. Nội dung tổng hợp từ `readme.md` và các thành phần quan trọng trong `MainActivity.java` cùng các mô-đun liên quan.
 
+## **Permissions**
+- **`android.permission.INTERNET`**: Cho phép ứng dụng truy cập Internet để gửi thông báo tới macOS server.
+- **`android.permission.ACCESS_NETWORK_STATE`**: Kiểm tra trạng thái kết nối mạng trước khi gửi.
+- **`android.permission.ACCESS_WIFI_STATE`**: Truy cập trạng thái Wi‑Fi (dùng cho discovery/diagnostics).
+- **`android.permission.CHANGE_WIFI_STATE`**: Thay đổi trạng thái Wi‑Fi nếu cần (được khai báo trong manifest).
+- **`android.permission.NEARBY_WIFI_DEVICES`** (với flag `neverForLocation`): Dùng cho khám phá thiết bị Wi‑Fi gần (không dùng vị trí).
+- **`android.permission.CAMERA`**: Cần để quét QR code trong `SetupActivity`.
+- **`android.permission.POST_NOTIFICATIONS`**: Yêu cầu trên Android 13+ để hiển thị/đẩy thông báo.
+- **Service binding permission**: `android.permission.BIND_NOTIFICATION_LISTENER_SERVICE` — cần cho `NotificationBridgeService` (ứng dụng phải được cấp quyền Notification Access trong Settings để `NotificationListenerService` hoạt động).
+
+Lưu ý: ngoài các permission khai báo trong `AndroidManifest.xml`, người dùng cần bật quyền "Notification access" cho app trong cài đặt hệ thống để `NotificationBridgeService` có thể nhận sự kiện thông báo.
+
 ## 1. Tổng quan hệ thống Android
 - **Mục tiêu**: Lắng nghe thông báo hệ thống, mã hóa và gửi tới server macOS qua LAN.
 - **Thành phần chính**:
