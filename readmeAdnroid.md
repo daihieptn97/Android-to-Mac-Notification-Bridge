@@ -136,22 +136,27 @@ Show Toast OK
 
 Tài liệu này hỗ trợ dev hiểu rõ cách dòng dữ liệu đi qua app Android, các điểm cần chú ý khi mở rộng hoặc debug. Đảm bảo tuân thủ quy trình bảo mật khi thao tác với API key và encryption key.
 
-## **Source Files & Relationships**
-- **`ConfigRepository.java`**: Central storage for API key, base64 AES key, cached server URL, sent count and `BridgeState`. Uses `EncryptedSharedPreferences` when available. Other components read/write config and state through this repository.
-- **`NotificationBridgeService.java`**: `NotificationListenerService` implementation that receives system notifications, converts them to `NotificationPayload`, encrypts with `EncryptionHelper`, and sends via `NotificationSender`. It also starts discovery with `ServiceDiscoveryManager` and updates `ConfigRepository` status.
-- **`NotificationPayload.java`**: Model that extracts meaningful fields from `StatusBarNotification` (title, text, package, channel, timestamp) and converts to JSON for encryption/sending.
-- **`EncryptedPayload.java`**: Simple model holding `nonce`, `ciphertext`, and `tag` (all base64) and producing the JSON body the server expects.
-- **`EncryptionHelper.java`**: AES-256-GCM helper that accepts a base64 key, generates a 12-byte nonce, produces ciphertext+tag and returns an `EncryptedPayload`. Thrown exceptions are surfaced to callers (service/UI) to update state.
-- **`ServiceDiscoveryManager.java`**: Uses Android `NsdManager` to discover `_securenotif._tcp` services on LAN. Resolves a service into a `http://host:port/notify` URL and notifies listeners (UI or service) so the URL can be cached in `ConfigRepository`.
-- **`NotificationSender.java`**: Network layer using OkHttp to POST the `EncryptedPayload` JSON to the resolved server URL with `Authorization: Bearer <apiKey>`. Runs network calls on a background executor and reports success/error via a callback.
-- **`NotificationUtils.java`**: Small utility to ignore internal/ongoing notifications (prevents loops and noisy events).
-- **`MainActivity.java`**: UI controller that shows current `BridgeState`, server URL, sent count and config state. It triggers discovery, opens notification access settings, and builds+encrypts a test payload (using `EncryptionHelper`) then calls `NotificationSender` to exercise the end-to-end flow. It listens to `ConfigRepository` changes to update the UI.
-- **`SetupActivity.java`**: Camera + ML Kit QR scanner that reads a JSON QR containing `api_key` and `encryption_key`. Validates and saves config via `ConfigRepository`, requests rebind of the notification listener, and closes when done.
+## **Tệp nguồn & Mối quan hệ**
 
-Relationship summary (high-level flow):
-- `SetupActivity` → saves keys to `ConfigRepository` (QR scan).
-- `MainActivity` ↔ `ConfigRepository` (reads state, triggers discovery, sends test payload).
-- `NotificationBridgeService` (NotificationListener) → `NotificationPayload` → `EncryptionHelper` → `EncryptedPayload` → `NotificationSender` → remote server. Service uses `ServiceDiscoveryManager` to locate server and writes status to `ConfigRepository`.
-- `ServiceDiscoveryManager` → resolves server URL and updates `ConfigRepository` via listeners in either UI or service.
+Dưới đây là bảng tóm tắt các tệp trong package `com.hieptran.android_to_mac_notification_bridge`, mục đích chính và mối liên hệ chính giữa chúng (dành cho lập trình viên Android):
 
-Keep these responsibilities in mind when changing behavior: storage/state (`ConfigRepository`), discovery (`ServiceDiscoveryManager`), crypto (`EncryptionHelper`/models), network (`NotificationSender`), and UI/permissions (`MainActivity`/`SetupActivity`).
+| Tệp | Mục đích (Ngắn) | Mối liên hệ / Vai trò trong luồng |
+|---|---|---|
+| `ConfigRepository.java` | Lưu cấu hình (API key, khóa AES base64), `serverUrl`, `sentCount` và `BridgeState` (dùng `EncryptedSharedPreferences` nếu có). | Nơi mọi thành phần đọc/ghi cấu hình và trạng thái. |
+| `NotificationBridgeService.java` | `NotificationListenerService` nhận thông báo hệ thống, chuyển thành payload, mã hóa và gửi. | Chạy nền, dùng `ServiceDiscoveryManager`, `EncryptionHelper`, `NotificationSender` và cập nhật `ConfigRepository`. |
+| `NotificationPayload.java` | Trích xuất các trường cần thiết từ `StatusBarNotification` và chuyển thành JSON. | Được `NotificationBridgeService` và `MainActivity` (test) sử dụng để tạo payload. |
+| `EncryptedPayload.java` | Model đơn giản chứa `nonce`, `ciphertext`, `tag` (Base64) và xuất JSON gửi lên server. | Kết quả của `EncryptionHelper.encrypt()`; được `NotificationSender` gửi đi. |
+| `EncryptionHelper.java` | AES‑256‑GCM encryptor: nhận key base64, sinh nonce 12 byte, trả `EncryptedPayload`. | Được gọi bởi cả service và UI khi cần mã hóa payload. |
+| `ServiceDiscoveryManager.java` | Dùng `NsdManager` để khám phá `_securenotif._tcp` trên LAN và resolve thành `http://host:port/notify`. | Thông báo URL cho UI hoặc service qua listener; `ConfigRepository` lưu URL. |
+| `NotificationSender.java` | Lớp mạng dùng OkHttp để POST JSON (`EncryptedPayload`) đến server với header `Authorization: Bearer <apiKey>`. | Thực hiện gửi trên executor nền và báo lỗi/thành công bằng callback. |
+| `NotificationUtils.java` | Utility nhỏ để bỏ qua thông báo nội bộ hoặc `ongoing` (tránh vòng lặp). | Được `NotificationBridgeService` dùng để lọc thông báo không cần gửi. |
+| `MainActivity.java` | UI hiển thị `BridgeState`, `serverUrl`, `sentCount` và trạng thái cấu hình; điều khiển discovery và gửi test notification. | Tương tác với `ConfigRepository`, `ServiceDiscoveryManager`, `EncryptionHelper` (để test) và `NotificationSender`. |
+| `SetupActivity.java` | Quét QR (Camera + ML Kit) để nhận `api_key` và `encryption_key`, validate và lưu vào `ConfigRepository`. | Sau lưu, yêu cầu rebind `NotificationListenerService` để áp dụng cấu hình mới. |
+
+Luồng tổng quát (high-level):
+- `SetupActivity` → lưu `api_key` & `encryption_key` vào `ConfigRepository` (qua QR).
+- `MainActivity` ↔ `ConfigRepository` (đọc trạng thái, kích hoạt discovery, gửi payload test).
+- Khi có thông báo: `NotificationBridgeService` → chuyển `StatusBarNotification` → `NotificationPayload` → `EncryptionHelper` → `EncryptedPayload` → `NotificationSender` → Server.
+- `ServiceDiscoveryManager` → resolve URL → listener cập nhật `ConfigRepository` (UI hoặc service nhận URL và lưu lại).
+
+Khi sửa đổi chức năng, hãy nhớ phân tách rõ trách nhiệm: lưu/trạng thái (`ConfigRepository`), khám phá (`ServiceDiscoveryManager`), mã hóa (`EncryptionHelper`/models), mạng (`NotificationSender`) và giao diện/quyền (`MainActivity`/`SetupActivity`).
