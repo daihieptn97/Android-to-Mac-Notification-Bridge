@@ -805,38 +805,24 @@ import CoreImage         // QR code generation
 
 ### 6.4. Sequence Diagram - Gửi thông báo
 
-```
-Android                Mac Server
-  │                        │
-  │  1. Notification       │
-  │     Event              │
-  │◄───────────            │
-  │                        │
-  │  2. Extract Data       │
-  ├────────────            │
-  │                        │
-  │  3. Encrypt (AES)      │
-  ├────────────            │
-  │                        │
-  │  4. HTTP POST          │
-  ├───────────────────────►│
-  │  Authorization: Bearer │
-  │  Body: {encrypted}     │
-  │                        │
-  │                        │  5. Validate API Key
-  │                        ├──────────────
-  │                        │
-  │                        │  6. Decrypt
-  │                        ├──────────────
-  │                        │
-  │                        │  7. Show Notification
-  │                        ├──────────────►macOS
-  │                        │
-  │  8. HTTP 200 OK        │
-  │◄───────────────────────┤
-  │                        │
-  │  9. Close Connection   │
-  │                        │
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Android as Android
+    participant Mac as Máy\nMac (Máy chủ)
+
+    Android->>Android: 1. Sự kiện thông báo\n(onNotificationPosted)
+    Android->>Android: 2. Trích xuất dữ liệu
+    Android->>Android: 3. Mã hóa (AES-256-GCM)
+    Android->>Mac: 4. HTTP POST /notify\nAuthorization: Bearer <apiKey>\nBody: {encrypted}
+    Mac->>Mac: 5. Kiểm tra API Key
+    alt Xác thực hợp lệ
+        Mac->>Mac: 6. Giải mã (AES-GCM) và phân tích payload
+        Mac->>Hệ thống: 7. Hiển thị thông báo (UNUserNotificationCenter)
+        Mac-->>Android: 8. HTTP 200 OK
+    else Xác thực thất bại
+        Mac-->>Android: 401 Unauthorized
+    end
 ```
 
 ---
@@ -1052,47 +1038,57 @@ func validateNotificationData(_ json: [String: Any]) -> Bool {
 ## 8. Biểu đồ sequence (một số chức năng quan trọng)
 
 ### 8.1 Sequence: Setup (QR scan → save config)
-```
-User                          Android App                 SetupActivity
- |                                 |                          |
- | -- open SetupActivity --------> |                          |
- |                                 | -- show camera/QR -----> |
- |                                 | <- QR content (JSON) --- |
- |                                 | -- validate & save ----> |
- |                                 | (EncryptedSharedPrefs)  |
- |                                 |                          |
+```mermaid
+sequenceDiagram
+    autonumber
+    participant User as Người dùng
+    participant App as Ứng dụng\nAndroid
+    participant Setup as SetupActivity
+
+    User->>App: Mở màn hình cài đặt (Setup)
+    App->>Setup: Hiển thị camera / QR
+    Setup-->>App: Nội dung QR (JSON)
+    App->>App: Xác thực & lưu cấu hình\n(EncryptedSharedPreferences)
+    App-->>User: Hiển thị trạng thái: Đã lưu
 ```
 
 ### 8.2 Sequence: Send notification (Android → macOS)
-```
-NotificationListenerService -> EncryptionHelper -> NotificationSender -> Mac Server (NWListener)
-     1. onNotificationPosted
-     2. build NotificationPayload
-     3. encrypt (AES-GCM) -> EncryptedPayload
-     4. POST /notify (Authorization: Bearer <apiKey>)
-     5. Server: validate header -> decrypt -> decode payload -> dispatch UNNotification
+```mermaid
+sequenceDiagram
+    autonumber
+    participant NLS as NotificationListenerService
+    participant Enc as Trình\nMã hóa
+    participant Sender as Bộ\nGửi
+    participant Server as Máy\nMac (NWListener)
+
+    NLS->>NLS: 1. onNotificationPosted
+    NLS->>Enc: 2. Tạo NotificationPayload
+    Enc->>Enc: 3. Mã hóa (AES-256-GCM) → EncryptedPayload
+    Enc-->>Sender: EncryptedPayload{nonce,ciphertext,tag}
+    Sender->>Server: 4. POST /notify\nAuthorization: Bearer <apiKey>\nBody: {nonce,ciphertext,tag}
+    Server->>Server: 5. Xác thực header → Giải mã → Giải mã JSON → Dispatch UNNotification
 ```
 
 ### 8.3 Detailed sequence: Send/Receive + Encryption internals
 ```mermaid
 sequenceDiagram
     autonumber
-    participant Android as Android\n(NotificationService)
-    participant Enc as EncryptionHelper
-    participant Sender as NotificationSender
-    participant Server as macOS\n(SecureNotificationServer)
+    participant Android as Android\n(Dịch vụ thông báo)
+    participant Enc as Trình\nMã hóa
+    participant Sender as Bộ\nGửi
+    participant Server as Máy chủ\nmacOS (SecureNotificationServer)
 
-    Android->>Enc: Build JSON payload
-    Enc->>Enc: Generate 12-byte nonce\nAES-GCM seal(plaintext, key, nonce)\nBase64-encode nonce,ciphertext,tag
+    Android->>Enc: Xây dựng payload JSON
+    Enc->>Enc: Sinh nonce 12-byte\nAES-GCM seal(plaintext, key, nonce)\nBase64 mã hóa nonce,ciphertext,tag
     Enc-->>Sender: EncryptedPayload { nonce, ciphertext, tag }
     Sender->>Server: POST /notify\nAuthorization: Bearer <apiKey>\nBody: { nonce,ciphertext,tag }
-    Server->>Server: Parse HTTP headers & body\nValidate Authorization
-    alt Auth OK
-        Server->>Server: Base64-decode fields\nReconstruct SealedBox\nAES.GCM.open(sealedBox, key)
+    Server->>Server: Phân tích HTTP headers & body\nXác thực Authorization
+    alt Xác thực OK
+        Server->>Server: Base64-decode các trường\nTạo SealedBox\nAES.GCM.open(sealedBox, key)
         Server->>Server: Parse plaintext JSON → NotificationPayload
-        Server->>System: Dispatch UNUserNotification
+        Server->>Hệ thống: Dispatch UNUserNotification
         Server-->>Sender: 200 OK
-    else Auth Failed
+    else Xác thực thất bại
         Server-->>Sender: 401 Unauthorized
     end
 ```
@@ -1135,21 +1131,34 @@ Example request body:
 ## 9. Biểu đồ trạng thái (state diagrams)
 
 ### 9.1 Server state
-```
-[Stopped] -- start --> [Starting]
-[Starting] -- listening --> [Running]
-[Running] -- error --> [Error]
-[Error] -- stop/resolve --> [Stopped]
-[Running] -- stop --> [Stopped]
+```mermaid
+stateDiagram-v2
+    state "Đã dừng" as stopped
+    state "Đang khởi động" as starting
+    state "Đang chạy" as running
+    state "Lỗi" as error
+
+    stopped --> starting: start
+    starting --> running: listening
+    running --> error: error
+    error --> stopped: stop/resolve
+    running --> stopped: stop
 ```
 
 ### 9.2 Device connection state (Android client)
-```
-[Unknown] -- discover --> [Discovered]
-[Discovered] -- resolve OK --> [Connected]
-[Connected] -- no activity --> [Idle]
-[Connected] -- send fail --> [Error]
-[Error] -- rediscover --> [Discovered]
+```mermaid
+stateDiagram-v2
+    state "Không rõ" as unknown
+    state "Đã phát hiện" as discovered
+    state "Đã kết nối" as connected
+    state "Không hoạt động" as idle
+    state "Lỗi" as error
+
+    unknown --> discovered: discover
+    discovered --> connected: resolve OK
+    connected --> idle: no activity
+    connected --> error: send fail
+    error --> discovered: rediscover
 ```
 
 ## 8. Yêu cầu hệ thống
