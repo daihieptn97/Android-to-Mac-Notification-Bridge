@@ -5,6 +5,8 @@
 **Ngày tạo:** 2025-11-19  
 **Phiên bản:** 1.0.0
 
+**Tài liệu liên quan:** [Android guide](./readmeAdnroid.md) · [macOS guide](./readmemacos.md)
+
 ---
 
 ## 📋 Mục Lục
@@ -37,71 +39,31 @@ Hệ thống cho phép đồng bộ tất cả thông báo (cuộc gọi, tin nh
 
 ```
 ┌──────────────────────┐
-│   Android Device     │
-│  (Kotlin/Java)       │
-│                      │
-│  ┌────────────────┐  │
-│  │ Notification   │  │
-│  │ Listener       │  │
-│  │ Service        │  │
-│  └────────┬───────┘  │
-│           │          │
-│  ┌────────▼───────┐  │
-│  │ AES-256-GCM    │  │
-│  │ Encryption     │  │
-│  └────────┬───────┘  │
-│           │          │
-│  ┌────────▼───────┐  │
-│  │ HTTP Client    │  │
-│  │ (OkHttp)       │  │
-│  └────────┬───────┘  │
-└───────────┼──────────┘
-            │
-            │ HTTP POST
-            │ (LAN Only)
-            │
-┌───────────▼──────────┐
-│   Mac Server         │
-│   (Swift)            │
-│                      │
-│  ┌────────────────┐  │
-│  │ HTTP Server    │  │
-│  │ (Network Fwk)  │  │
-│  └────────┬───────┘  │
-│           │          │
-│  ┌────────▼───────┐  │
-│  │ API Key Auth   │  │
-│  └────────┬───────┘  │
-│           │          │
-│  ┌────────▼───────┐  │
-│  │ AES Decryption │  │
-│  └────────┬───────┘  │
-│           │          │
-│  ┌────────▼───────┐  │
-│  │ UserNotif      │  │
-│  │ Framework      │  │
-│  └────────────────┘  │
-└──────────────────────┘
-```
+## 5. Thư viện & Dependencies
 
----
+### 5.1 Android (theo `Android/app/build.gradle`)
 
-## 2. Luồng hoạt động
+- Compile/target SDK: `compileSdk 36`, `minSdk 31`, `targetSdk 35`.
+- Các dependency chính (theo `build.gradle`):
+    - `androidx.appcompat` (UI compatibility)
+    - `com.google.android.material:material` (Material components)
+    - `androidx.activity` (activity KTX)
+    - `androidx.constraintlayout` (layout)
+    - `androidx.security:security-crypto` (EncryptedSharedPreferences / MasterKey)
+    - `com.squareup.okhttp3:okhttp` (network client)
+    - CameraX modules: `camerax-core`, `camerax-camera2`, `camerax-lifecycle`, `camerax-view` (QR via CameraX)
+    - `com.google.mlkit:barcode-scanning` (QR scanning)
+    - Testing: `junit`, `androidx.test.ext:junit`, `espresso-core` (unit & instrumentation tests)
 
-### 2.1. Setup lần đầu (One-time Setup)
+### 5.2 macOS (theo `Podfile`)
 
-```
-Bước 1: MAC SERVER
-├─ Khởi động HTTP Server trên port 8080
-├─ Sinh ngẫu nhiên API Key (UUID)
-├─ Sinh ngẫu nhiên AES-256 Key
-├─ Đăng ký Bonjour Service "_securenotif._tcp"
-└─ Hiển thị QR Code chứa config
+- `Podfile` hiện tại không thêm pods; target macOS: `15.0` và `use_frameworks!`.
+- Ứng dụng sử dụng framework hệ thống: `Network.framework`, `CryptoKit`, `UserNotifications`, `SwiftUI`, `CoreImage` (QR generation).
 
-Bước 2: ANDROID APP
-├─ Mở camera scan QR Code
-├─ Parse JSON config từ QR
-│  ├─ api_key: String
+### 5.3 Tổng quan
+
+- Android: sử dụng một vài thư viện bên thứ ba (OkHttp, CameraX, ML Kit, Security Crypto).
+- macOS: không yêu cầu Pod bên ngoài theo `Podfile`; dùng framework hệ thống để giữ ứng dụng gọn nhẹ.
 │  └─ encryption_key: Base64 String
 ├─ Lưu vào SharedPreferences
 └─ Yêu cầu quyền Notification Access
@@ -256,148 +218,50 @@ Error Scenarios:
 
 ## 3. Công nghệ sử dụng
 
-### 3.1. Android Side
+### 3.1 Android
 
-#### Ngôn ngữ
-- **Kotlin** (Primary) - Modern, null-safe, coroutine support
-- **Java** (Optional) - Tương thích backward
+- **Ngôn ngữ:** Kotlin (primary), Java (compat)
+- **SDK:** Android SDK (minSdk 31, targetSdk 35, compileSdk 36)
+- **Core:** NotificationListenerService, NsdManager (mDNS), EncryptedSharedPreferences, OkHttp, CameraX + ML Kit (QR).
 
-#### Framework & SDK
-| Công nghệ | Phiên bản | Mục đích |
-|-----------|-----------|----------|
-| Android SDK | API 21+ (Lollipop) | Base platform |
-| Kotlin Coroutines | 1.7.3 | Async operations |
-| Jetpack Compose | 1.5.4 | UI (Setup screen) |
+Ứng dụng Android lắng nghe `NotificationListenerService`, serialize thông báo thành `NotificationPayload`, mã hóa AES‑256‑GCM, và gửi lên Mac bằng OkHttp. Cấu hình (apiKey, encryptionKey, serverUrl) lưu trong `EncryptedSharedPreferences` (`ConfigRepository`).
 
-#### Core Components
-1. **NotificationListenerService**
-   - Built-in Android service
-   - Lắng nghe tất cả thông báo hệ thống
-   - Tự động restart khi bị kill
+### 3.2 macOS
 
-2. **NsdManager (Network Service Discovery)**
-   - Android API cho mDNS/DNS-SD
-   - Tương đương Bonjour của Apple
-   - Tự động tìm service trên LAN
+- **Ngôn ngữ:** Swift 5.9+
+- **Deployment target:** macOS 15.0 (xcode project / Podfile)
+- **Core frameworks / runtime:** SwiftUI, Network.framework (NWListener/NWConnection), UserNotifications, CryptoKit, CoreImage (QR).
+- **Podfile:** project không yêu cầu pods bổ sung; sử dụng `use_frameworks!` và target macOS 15.0.
 
-3. **SharedPreferences**
-   - Lưu trữ config (API key, encryption key)
-   - Persistent storage
-   - Encrypted mode (EncryptedSharedPreferences)
-
-### 3.2. Mac Side
-
-#### Ngôn ngữ
-- **Swift 5.9+** - Modern, type-safe, protocol-oriented
-
-#### Framework
-| Framework | Phiên bản | Mục đích |
-|-----------|-----------|----------|
-| SwiftUI | 5.0+ | User Interface |
-| Network.framework | iOS 12+ / macOS 10.14+ | HTTP Server |
-| CryptoKit | macOS 10.15+ | AES-256-GCM encryption |
-| UserNotifications | macOS 10.14+ | Hiển thị notification |
-| Foundation | Built-in | Core utilities |
-
-#### Core Components
-1. **Network.framework**
-   - Low-level networking
-   - NWListener cho HTTP server
-   - NWConnection cho client handling
-
-2. **CryptoKit**
-   - Native encryption (AES-GCM)
-   - Secure key generation
-   - Hash functions (SHA-256)
-
-3. **NSNetService (Bonjour)**
-   - Publish service lên mạng LAN
-   - Tự động advertise port
-   - DNS-SD compatible
+Trình server macOS dùng `NWListener` để publish Bonjour `_securenotif._tcp`, lưu key vào Keychain, giải mã payload bằng `CryptoKit` và hiển thị bằng `UserNotifications`.
 
 ---
 
 ## 4. Kỹ thuật áp dụng
+### 4. Kỹ thuật áp dụng
 
-### 4.1. Kỹ thuật mạng (Networking)
+### 4.1 Networking & Discovery
 
-#### HTTP on-demand
-```kotlin
-// Không giữ kết nối persistent
-// Chỉ tạo connection khi cần → Close ngay
+- Android sử dụng OkHttp (timeout 3s) cho request fire-and-forget; không giữ kết nối persistent.
+- Service discovery: Android dùng `NsdManager` để resolve `_securenotif._tcp`; macOS publish bằng `NWListener.service`.
+- `NetworkUtils` (mac) tách phần parsing HTTP/text từ logic xử lý payload để dễ kiểm thử.
 
-val client = OkHttpClient.Builder()
-    .connectTimeout(3, TimeUnit.SECONDS)
-    .writeTimeout(3, TimeUnit.SECONDS)  
-    .readTimeout(3, TimeUnit.SECONDS)
-    .connectionPool(ConnectionPool(0, 1, TimeUnit.SECONDS)) // No pooling
-    .build()
+### 4.2 Battery & Resource Optimization
 
-// Fire-and-forget request
-Thread {
-    client.newCall(request).execute().use { response ->
-        // Tự động close sau use
-    }
-}.start()
-```
+- Event-driven: chỉ gửi HTTP khi có notification (không polling).
+- Không dùng foreground service / persistent sockets; cache `serverUrl` và chỉ chạy discovery khi cần.
+- Short timeouts (3s) và no-retry by default để tiết kiệm pin.
 
-**Lợi ích:**
-- Tiết kiệm pin (không giữ socket)
-- Không bị Doze Mode kill
-- Không cần wake lock
+### 4.3 Concurrency
 
-#### Service Discovery (mDNS/Bonjour)
+- Android: background thread / executor hoặc Coroutines (Dispatchers.IO) cho network I/O; handler cho scheduled retry.
+- macOS: `DispatchQueue` cho background work; dedicated queue cho `NWListener`; UI updates via main actor / main queue.
 
-**Android (NSD):**
-```kotlin
-val nsdManager = context.getSystemService(Context.NSD_SERVICE) as NsdManager
+### 4.4 Cryptography (moved)
 
-nsdManager.discoverServices(
-    "_securenotif._tcp",  // Service type
-    NsdManager.PROTOCOL_DNS_SD,
-    discoveryListener
-)
+- Phần chi tiết mã hóa đã được tách ra khỏi tài liệu chính (xem `docs/readmeAdnroid.md` và `docs/readmemacos.md` để biết chi tiết về AES‑256-GCM, nonce, tag và việc lưu key).  
 
-// Khi tìm thấy service
-nsdManager.resolveService(service, resolveListener)
-// → Nhận được IP + Port
-```
-
-**Mac (Bonjour):**
-```swift
-let listener = try NWListener(using: .tcp, on: 8080)
-
-listener.service = NWListener.Service(
-    name: "SecureNotifBridge",
-    type: "_securenotif._tcp"
-)
-
-listener.start(queue: .main)
-// → Tự động advertise trên mạng LAN
-```
-
-**Lợi ích:**
-- Không cần nhập IP thủ công
-- Tự động tìm khi đổi mạng
-- Zero-configuration networking
-
-### 4.2. Kỹ thuật mã hóa (Cryptography)
-
-#### AES-256-GCM (Galois/Counter Mode)
-
-**Đặc điểm:**
-- **Authenticated Encryption**: Vừa mã hóa vừa xác thực
-- **AEAD** (Authenticated Encryption with Associated Data)
-- **128-bit authentication tag**: Chống giả mạo
-- **Standard**: NIST SP 800-38D
-
-**Android Implementation:**
-```kotlin
-fun encrypt(plaintext: String): EncryptedData {
-    val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-    
-    // Random nonce (IV) - MUST be unique cho mỗi message
-    val nonce = ByteArray(12)
+> Note: theo yêu cầu, phần chi tiết kỹ thuật mã hóa (trước đây nằm trong 4.2) đã bị loại bỏ khỏi phần này; xem file Android/macOS guides để biết chi tiết.
     SecureRandom().nextBytes(nonce)
     
     val gcmSpec = GCMParameterSpec(128, nonce) // 128-bit tag
@@ -1158,39 +1022,76 @@ func validateNotificationData(_ json: [String: Any]) -> Bool {
 }
 ```
 
-### 7.3. Security Checklist
 
-- [x] End-to-end encryption (AES-256-GCM)
-- [x] API key authentication
-- [x] Secure key storage (Keychain/EncryptedSharedPreferences)
-- [x] LAN-only communication
-- [x] Input validation
-- [x] Length limits
-- [x] No sensitive data logging
-- [x] QR code setup (không gửi key qua mạng)
-- [ ] Certificate pinning (không cần - HTTP local)
-- [ ] Rate limiting (tùy chọn)
-- [ ] Nonce uniqueness validation (tùy chọn)
+### 7.3 Security Checklist (updated)
 
-### 7.4. Known Limitations
+- [x] API key authentication (Bearer token)
+- [x] Secure key storage (Keychain / EncryptedSharedPreferences)
+- [x] LAN-only communication and mDNS discovery
+- [x] Input validation and length limits
+- [x] No sensitive data logging (keys or plaintext)
+- [ ] Rate limiting (recommended)
+- [ ] Nonce uniqueness validation (optional for stronger replay protection)
 
-1. **Shared Secret**: Cả Android và Mac có cùng encryption key
-   - Không có forward secrecy
-   - Nếu key bị lộ, tất cả message đều bị compromised
+### 7.4 Known Limitations
 
-2. **No Certificate**: HTTP không phải HTTPS
-   - Chấp nhận được vì LAN-only
-   - Không cần CA certificate
+1. Shared Secret: Android and Mac share the same symmetric key
+    - No forward secrecy; if key is leaked, past messages can be compromised.
 
-3. **Trust Local Network**: Tin tưởng mạng LAN không có kẻ tấn công
-   - Không validate nonce uniqueness (replay attack possible)
-   - Không có perfect forward secrecy
+2. HTTP (not HTTPS) on LAN
+    - Considered acceptable for LAN-only deployments; do not expose server to Internet.
 
-4. **No User Authentication**: Không verify user identity
-   - Chỉ verify thiết bị (qua API key)
-   - Không biết ai đang dùng điện thoại
+3. Trusting Local Network
+    - Current design trusts LAN; for hostile environments consider additional protections (nonce store, IP whitelisting).
+
+4. No end-user authentication
+    - System authenticates device via API key, not user identity.
 
 ---
+
+## 8. Biểu đồ sequence (một số chức năng quan trọng)
+
+### 8.1 Sequence: Setup (QR scan → save config)
+```
+User                          Android App                 SetupActivity
+ |                                 |                          |
+ | -- open SetupActivity --------> |                          |
+ |                                 | -- show camera/QR -----> |
+ |                                 | <- QR content (JSON) --- |
+ |                                 | -- validate & save ----> |
+ |                                 | (EncryptedSharedPrefs)  |
+ |                                 |                          |
+```
+
+### 8.2 Sequence: Send notification (Android → macOS)
+```
+NotificationListenerService -> EncryptionHelper -> NotificationSender -> Mac Server (NWListener)
+     1. onNotificationPosted
+     2. build NotificationPayload
+     3. encrypt (AES-GCM) -> EncryptedPayload
+     4. POST /notify (Authorization: Bearer <apiKey>)
+     5. Server: validate header -> decrypt -> decode payload -> dispatch UNNotification
+```
+
+## 9. Biểu đồ trạng thái (state diagrams)
+
+### 9.1 Server state
+```
+[Stopped] -- start --> [Starting]
+[Starting] -- listening --> [Running]
+[Running] -- error --> [Error]
+[Error] -- stop/resolve --> [Stopped]
+[Running] -- stop --> [Stopped]
+```
+
+### 9.2 Device connection state (Android client)
+```
+[Unknown] -- discover --> [Discovered]
+[Discovered] -- resolve OK --> [Connected]
+[Connected] -- no activity --> [Idle]
+[Connected] -- send fail --> [Error]
+[Error] -- rediscover --> [Discovered]
+```
 
 ## 8. Yêu cầu hệ thống
 
@@ -1309,152 +1210,7 @@ func validateNotificationData(_ json: [String: Any]) -> Bool {
 
 ---
 
-## 10. Testing Strategy
 
-### 10.1. Unit Tests
-
-**Android:**
-```kotlin
-@Test
-fun testEncryption() {
-    val helper = EncryptionHelper(testKey)
-    val plaintext = "Test notification"
-    
-    val encrypted = helper.encrypt(plaintext)
-    assertNotNull(encrypted.ciphertext)
-    assertNotNull(encrypted.nonce)
-    assertNotEquals(plaintext, encrypted.ciphertext)
-}
-
-@Test
-fun testNSDDiscovery() {
-    val discovery = ServiceDiscovery(context) { host, port ->
-        assertEquals("192.168.1.100", host)
-        assertEquals(8080, port)
-    }
-    discovery.start()
-    // Wait for discovery...
-}
-```
-
-**Mac:**
-```swift
-func testDecryption() throws {
-    let server = SecureNotificationServer()
-    let testData = "Test notification".data(using: .utf8)!
-    
-    // Encrypt
-    let nonce = AES.GCM.Nonce()
-    let sealed = try AES.GCM.seal(testData, using: server.encryptionKey, nonce: nonce)
-    
-    // Decrypt
-    let decrypted = try AES.GCM.open(sealed, using: server.encryptionKey)
-    
-    XCTAssertEqual(testData, decrypted)
-}
-```
-
-### 10.2. Integration Tests
-
-1. **End-to-end notification flow**
-   - Trigger notification trên Android
-   - Verify hiển thị trên Mac
-   - Check data integrity
-
-2. **Network failure scenarios**
-   - Mac offline
-   - Network timeout
-   - Invalid API key
-
-3. **Security tests**
-   - Invalid encryption
-   - Replay attack
-   - Man-in-the-middle
-
-### 10.3. Manual Testing Checklist
-
-- [ ] Setup flow (QR scan)
-- [ ] Notification types (call, SMS, app)
-- [ ] Different WiFi networks
-- [ ] Mac sleep/wake
-- [ ] Android app killed
-- [ ] Network change (WiFi switch)
-- [ ] Multiple Android devices
-- [ ] Long content (1000+ chars)
-- [ ] Special characters (emoji, unicode)
-- [ ] High frequency (100 notifications/minute)
-
----
-
-## 11. Deployment
-
-### 11.1. Android App Distribution
-
-**Option 1: Google Play Store**
-```bash
-# Build release APK
-./gradlew assembleRelease
-
-# Sign APK
-jarsigner -keystore release.keystore \
-          app/build/outputs/apk/release/app-release-unsigned.apk \
-          release_key
-
-# Zipalign
-zipalign -v 4 app-release-unsigned.apk app-release.apk
-
-# Upload to Play Console
-```
-
-**Option 2: Direct APK**
-```bash
-# Build debug APK (for testing)
-./gradlew assembleDebug
-
-# Install via ADB
-adb install app/build/outputs/apk/debug/app-debug.apk
-```
-
-### 11.2. Mac App Distribution
-
-**Option 1: Mac App Store**
-```bash
-# Archive app
-xcodebuild archive \
-  -scheme NotificationBridge \
-  -archivePath build/NotificationBridge.xcarchive
-
-# Export for App Store
-xcodebuild -exportArchive \
-  -archivePath build/NotificationBridge.xcarchive \
-  -exportPath build/ \
-  -exportOptionsPlist ExportOptions.plist
-
-# Upload via Transporter app
-```
-
-**Option 2: Direct Distribution (.dmg)**
-```bash
-# Create app bundle
-xcodebuild -configuration Release
-
-# Sign app
-codesign --deep --force --verify --verbose \
-  --sign "Developer ID Application: Your Name" \
-  NotificationBridge.app
-
-# Notarize (optional but recommended)
-xcrun notarytool submit NotificationBridge.zip \
-  --apple-id your@email.com \
-  --password app-specific-password
-
-# Create DMG
-hdiutil create -volname "NotificationBridge" \
-  -srcfolder NotificationBridge.app \
-  -ov -format UDZO NotificationBridge.dmg
-```
-
----
 
 ## 12. Troubleshooting
 

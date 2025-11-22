@@ -62,45 +62,44 @@ Lưu ý: ngoài các permission khai báo trong `AndroidManifest.xml`, người 
 ## 3. Biểu đồ
 ### 3.1 Biểu đồ luồng dữ liệu (DFD cấp cao)
 ```
-Android Notifications ─┐
-                       │ 1. onNotificationPosted
-NotificationBridgeSvc ─┼────▶ Payload JSON
-                       │
-ConfigRepository ◀─────┤ (API Key, AES Key)
-                       │
-EncryptionHelper ─────▶ EncryptedPayload
-                       │
-NotificationSender ───▶ HTTP POST /notify ──▶ Mac Server
+Android Notifications
+   ↓ onNotificationPosted
+NotificationBridgeService
+   ├─> Build NotificationPayload (from StatusBarNotification)
+   ├─> Read keys / config from ConfigRepository
+   ↓
+EncryptionHelper
+   └─> Encrypt(payload) -> EncryptedPayload { nonce, ciphertext, tag }
+   ↓
+NotificationSender
+   └─> POST /notify (Authorization: Bearer <apiKey>)
+   ↓
+Mac Server (SecureNotificationServer)
 ```
 
-### 3.2 Sơ đồ luồng (Flowchart gửi test)
+### 3.2 Sơ đồ luồng (gửi test notification)
 ```
 [Start]
-   │
-   ▼
-Has valid config?
-   │Yes                    │No
-   ▼                       ▼
-Server URL cached?     Update status ERROR
-   │Yes       │No         Show Toast
-   ▼          ▼           [End]
-Encrypt payload   Start discovery
-   │               │
-   ▼               ▼
-Encryption OK?   (async) wait
-   │Yes   │No
-   ▼      ▼
-Send HTTP   Update status ERROR
-   │
-   ▼
-Send success?
-   │Yes        │No
-   ▼           ▼
-Inc sentCount  Update status ERROR
-Update status  Show Toast failed
-Show Toast OK
-   │
-  [End]
+  ↓
+Check: has valid config? (apiKey + encryptionKey)
+  ├─ No -> Update status = ERROR, show Toast -> [End]
+  └─ Yes -> Continue
+         ↓
+Check: serverUrl cached?
+  ├─ No -> Start discovery (async) -> wait for resolve -> if resolved continue, else ERROR
+  └─ Yes -> Continue
+         ↓
+Build test payload (NotificationPayload)
+  ↓
+Encrypt payload via EncryptionHelper (AES-256-GCM)
+  ├─ On encrypt error -> Update status = ERROR, show Toast -> [End]
+  └─ On success -> continue
+         ↓
+NotificationSender.send(url, apiKey, encryptedPayload)
+  ↓
+HTTP response:
+  ├─ 2xx -> onSuccess: increment sentCount, update status = CONNECTED, show success Toast
+  └─ non-2xx / network error -> onError: update status = ERROR, show failure Toast
 ```
 
 ## 4. Kỹ thuật mã hóa & bảo mật
