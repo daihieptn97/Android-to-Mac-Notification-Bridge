@@ -1042,14 +1042,68 @@ func validateNotificationData(_ json: [String: Any]) -> Bool {
 sequenceDiagram
     autonumber
     participant User as Người dùng
-    participant App as Ứng dụng\nAndroid
-    participant Setup as SetupActivity
+    participant App as Ứng dụng\nAndroid (SetupActivity)
+    participant Camera as Camera (Preview)
+    participant Scanner as MLKit\n(BarcodeScanner)
+    participant Setup as SetupActivity\n(Logic)
+    participant Repo as ConfigRepository\n(EncryptedSharedPreferences)
+    participant NLS as NotificationBridgeService
 
-    User->>App: Mở màn hình cài đặt (Setup)
-    App->>Setup: Hiển thị camera / QR
-    Setup-->>App: Nội dung QR (JSON)
-    App->>App: Xác thực & lưu cấu hình\n(EncryptedSharedPreferences)
-    App-->>User: Hiển thị trạng thái: Đã lưu
+    User->>App: 1. Mở màn hình cài đặt (SetupActivity)
+    App->>Camera: 2. Yêu cầu quyền camera & hiển thị preview
+    Camera->>Scanner: 3. Khung hình → phân tích QR
+    Scanner-->>Setup: 4. Trả về `rawValue` (chuỗi JSON từ QR)
+    Note over Setup: rawValue example:\n{"api_key":"550e...","encryption_key":"Base64(32 bytes)","server_url":null}
+    Setup->>Setup: 5. Parse JSON \nvalidate fields (api_key, encryption_key)
+    alt Valid
+        Setup->>Repo: 6. saveConfig(api_key, encryption_key)
+        Note right of Repo: Lưu vào EncryptedSharedPreferences:\n- key: "api_key" → "550e..."\n- key: "encryption_key" → "Base64(...)"\n- key: "server_url" → null (chưa có)
+        Repo-->>Setup: 7. Ok (cấu hình đã lưu)
+        Setup->>NLS: 8. requestRebind(NotificationBridgeService) (thông báo hệ thống)
+        Setup-->>User: 9. Hiển thị: "Cấu hình đã lưu" → đóng màn hình
+    else Invalid
+        Setup-->>User: Hiển thị lỗi: "QR không hợp lệ"
+    end
+```
+
+Chi tiết bước (step-by-step) và dữ liệu trao đổi:
+
+1. Người dùng mở `SetupActivity` trong ứng dụng Android.
+2. Ứng dụng xin quyền camera (nếu cần) và bắt đầu hiển thị preview camera.
+3. `Preview` gửi frame cho `BarcodeScanner` (ML Kit) để dò QR.
+4. Khi phát hiện QR, `BarcodeScanner` trả về một chuỗi `rawValue` chứa JSON cấu hình.
+   - Ví dụ QR JSON:
+
+```json
+{
+  "api_key": "550e8400-e29b-41d4-a716-446655440000",
+  "encryption_key": "BASE64_ENC_KEY_32_BYTES",
+  "server_url": null
+}
+```
+
+5. `SetupActivity` phân tích JSON và kiểm tra hợp lệ:
+   - `api_key` tồn tại và có định dạng UUID;
+   - `encryption_key` hợp lệ theo `ConfigRepository.isValidKey()` (ví dụ Base64 của 32 bytes / 256 bits).
+6. Nếu hợp lệ, gọi `ConfigRepository.saveConfig(apiKey, encryptionKey)`:
+   - Lưu vào `EncryptedSharedPreferences` (hoặc tương đương): keys `api_key`, `encryption_key`, và `server_url` (nếu có).
+7. `ConfigRepository` trả về thành công; UI hiển thị trạng thái "Cấu hình đã lưu".
+8. `SetupActivity` gọi `NotificationListenerService.requestRebind(...)` để đảm bảo service nhận lại quyền nếu cần.
+9. SetupActivity đóng sau một khoảng trễ ngắn; người dùng thấy thông báo cấu hình thành công.
+
+Lưu ý bảo mật:
+- QR nên được tạo cục bộ bởi máy Mac và hiển thị một lần (one-time); chứa `encryption_key` (symmetric) và `api_key`.
+- `encryption_key` nên ở dạng Base64 của 32 bytes (256-bit) và được kiểm tra trước khi lưu.
+
+Ví dụ pseudo-code lưu trong `ConfigRepository` (tóm tắt):
+
+```kotlin
+fun saveConfig(apiKey: String, encryptionKey: String) {
+    val prefs = EncryptedSharedPreferences.create(...)
+    prefs.edit().putString("api_key", apiKey)
+                .putString("encryption_key", encryptionKey)
+                .apply()
+}
 ```
 
 ### 8.2 Sequence: Send notification (Android → macOS)
