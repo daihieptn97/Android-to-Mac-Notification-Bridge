@@ -1074,45 +1074,62 @@ NotificationListenerService -> EncryptionHelper -> NotificationSender -> Mac Ser
 ```
 
 ### 8.3 Detailed sequence: Send/Receive + Encryption internals
-```
-Android: MainActivity / NotificationBridgeService        EncryptionHelper        NotificationSender        Mac: SecureNotificationServer
-             (build payload)                                    |                       |                         |
-1. onNotificationPosted / sendTestNotification            |                       |                         |
-2. build NotificationPayload (JSON)                        |                       |                         |
-3. call EncryptionHelper.encrypt(plaintext) -------------->|                       |                         |
-    - EncryptionHelper (Android) does:
-      a) generate 12-byte nonce (IV)
-      b) AES/GCM/NoPadding: seal(plaintext, key, nonce) -> (ciphertext + tag)
-      c) Base64-encode: nonce_b64, ciphertext_b64, tag_b64
-      d) return EncryptedPayload { nonce, ciphertext, tag }
-                                                                                |                       |                         |
-4. receive EncryptedPayload -------------------------------|                       |                         |
-5. NotificationSender.buildRequest(url, apiKey, payload)    |                       |                         |
-    - set headers: Authorization: Bearer <apiKey>, Content-Type: application/json
-                                                                                |                       |                         |
-6. NotificationSender POST /notify (body = JSON {nonce,ciphertext,tag}) ---> HTTP ---> Mac NWListener
-                                                                                                                |
-7. NWListener accepts connection -> NetworkUtils.readRequest(connection)
-    - parse HTTP headers + body
-8. SecureNotificationServer: validate Authorization header -> KeychainHelper.loadApiKey() compare
-    - if invalid -> respond 401 and close
-                                                                                                                |
-9. parse JSON body -> extract nonce_b64, ciphertext_b64, tag_b64
-10. Base64-decode fields -> nonce, ciphertext, tag
-11. Reconstruct AES.GCM.SealedBox(nonce: nonce, ciphertext: ciphertext, tag: tag)
-12. AES.GCM.open(sealedBox, using: encryptionKey) -> plaintext bytes
-    - if decryption fails -> respond 400 and log
-13. JSONSerialization -> NotificationPayload (title, body, package, timestamp...)
-14. NotificationDispatcher.build UNMutableNotificationContent from payload
-15. UNUserNotificationCenter.add(request) -> user sees macOS notification
-16. SecureNotificationServer -> respond 200 OK to Android
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Android as Android\n(NotificationService)
+    participant Enc as EncryptionHelper
+    participant Sender as NotificationSender
+    participant Server as macOS\n(SecureNotificationServer)
+
+    Android->>Enc: Build JSON payload
+    Enc->>Enc: Generate 12-byte nonce\nAES-GCM seal(plaintext, key, nonce)\nBase64-encode nonce,ciphertext,tag
+    Enc-->>Sender: EncryptedPayload { nonce, ciphertext, tag }
+    Sender->>Server: POST /notify\nAuthorization: Bearer <apiKey>\nBody: { nonce,ciphertext,tag }
+    Server->>Server: Parse HTTP headers & body\nValidate Authorization
+    alt Auth OK
+        Server->>Server: Base64-decode fields\nReconstruct SealedBox\nAES.GCM.open(sealedBox, key)
+        Server->>Server: Parse plaintext JSON → NotificationPayload
+        Server->>System: Dispatch UNUserNotification
+        Server-->>Sender: 200 OK
+    else Auth Failed
+        Server-->>Sender: 401 Unauthorized
+    end
 ```
 
-Notes on fields & formats:
-- The JSON body sent from Android contains three Base64 strings: `nonce`, `ciphertext`, `tag`.
-- Nonce: 12 bytes (96 bits) random per message. Must be unique per key.
-- Ciphertext + Tag: `AES.GCM.seal` output split so server can reconstruct `SealedBox`.
-- Authorization: `Authorization: Bearer <apiKey>` is required; key stored on macOS Keychain and Android EncryptedSharedPreferences.
+Accessible textual steps (same flow, numbered):
+
+1. Android `NotificationListenerService` builds the notification JSON payload.
+2. `EncryptionHelper.encrypt(plaintext)`:
+   - generate a 12-byte random nonce (IV);
+   - perform AES-256-GCM seal -> produces ciphertext and authentication tag;
+   - Base64-encode `nonce`, `ciphertext`, and `tag`; return as `EncryptedPayload`.
+3. `NotificationSender` builds an HTTP POST to `POST /notify` with header `Authorization: Bearer <apiKey>` and JSON body `{ "nonce": "...", "ciphertext": "...", "tag": "..." }`.
+4. macOS `NWListener` accepts the connection; server parses HTTP headers and body.
+5. Server validates the Bearer token against the stored API key (Keychain).
+   - If invalid → respond `401 Unauthorized` and close.
+6. Server Base64-decodes `nonce`, `ciphertext`, `tag` and reconstructs an `AES.GCM.SealedBox`.
+7. Server calls `AES.GCM.open(sealedBox, using: encryptionKey)` to decrypt.
+   - If decryption fails → respond `400 Bad Request` and log the error.
+8. Server parses the plaintext JSON into `NotificationPayload` and builds a `UNMutableNotificationContent`.
+9. Server posts the notification via `UNUserNotificationCenter` and returns `200 OK` to the Android sender.
+
+Fields & formats (concise):
+
+- JSON body keys: `nonce`, `ciphertext`, `tag` — all Base64-encoded strings.
+- `nonce`: 12 bytes (96 bits) random per message; must be unique per key.
+- `ciphertext` + `tag`: output of AES-GCM sealing; server reconstructs the sealed box from these parts.
+- `Authorization` header: `Authorization: Bearer <apiKey>` (API key stored in Keychain / EncryptedSharedPreferences).
+
+Example request body:
+
+```json
+{
+  "nonce": "Base64(...)",
+  "ciphertext": "Base64(...)",
+  "tag": "Base64(...)"
+}
+```
 
 
 ## 9. Biểu đồ trạng thái (state diagrams)
