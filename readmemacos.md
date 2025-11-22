@@ -122,3 +122,45 @@ Update UI (counts, devices, status)
 - [ ] Sau mỗi lần rotate key, kiểm thử lại quá trình quét QR và gửi test notification từ Android.
 
 Tài liệu này cung cấp góc nhìn hệ thống cho macOS, giúp dev hiểu rõ luồng dữ liệu, cơ chế bảo mật và cách vận hành server trong LAN. Áp dụng quy trình này để mở rộng (ví dụ logging nâng cao, metrics) mà vẫn đảm bảo an toàn thông tin.
+
+## 8. Tệp nguồn & Mối quan hệ (trong `Macos/android_to_mac_notification_bridge`)
+
+Dưới đây liệt kê các tệp nguồn chính nằm trong `Macos/android_to_mac_notification_bridge/android_to_mac_notification_bridge/` cùng mô tả ngắn và mối quan hệ giữa chúng. Mục đích là giúp dev nhanh nắm được trách nhiệm từng file và luồng phụ thuộc nội bộ.
+| Tệp | Chức năng chính | Phụ thuộc / Ghi chú |
+|---|---|---|
+| `android_to_mac_notification_bridgeApp.swift` | Entry point (SwiftUI App). Tạo và inject `ServerViewModel` vào `ContentView`. | Khởi tạo `ServerViewModel`.
+| `BridgeConfig.swift` | Model chứa cấu hình server (API key, AES key, port, server URL). Serialize/deserialize JSON cho QR. | Dùng bởi `QRCodeGenerator`.
+| `SecureNotificationServer.swift` | Lõi server: sinh/rotate keys, lưu/đọc Keychain, khởi tạo `NWListener`, publish Bonjour, nhận kết nối, parse HTTP và forward payload để giải mã và dispatch. | Phụ thuộc: `NetworkUtils`, `KeychainHelper`, `NotificationDispatcher`, `NotificationPayload`.
+| `NetworkUtils.swift` | Tiện ích đọc/ghi HTTP trên `NWConnection` (parse headers, đọc body, tạo responses). | Được `SecureNotificationServer` sử dụng để tách phần networking.
+| `KeychainHelper.swift` | Wrapper truy cập Keychain (lưu API key, AES symmetric key). | `SecureNotificationServer` và `ServerViewModel` dùng để lưu/đọc key.
+| `QRCodeGenerator.swift` | Sinh `NSImage` QR từ `BridgeConfig` (JSON). | Dùng bởi `ServerViewModel` để tạo `qrImage` cho UI.
+| `NotificationPayload.swift` | `Codable` model mô tả payload từ Android (`title`, `content`, `packageName`, `type`, `timestamp`, ...). | Decode plaintext JSON sau khi giải mã AES-GCM.
+| `NotificationDispatcher.swift` | Xây dựng `UNMutableNotificationContent` từ `NotificationPayload` và gửi tới `UNUserNotificationCenter`. | Có thể mapping `type`→icon/sound.
+| `ServerViewModel.swift` | `ObservableObject` chứa trạng thái UI (`isServerRunning`, `status`, `serverURL`, `connectedDevices`, `notificationsCount`, `qrImage`) và hành động (`startServer`, `stopServer`, `regenerateKeys`, `requestNotificationPermission`). | Phối hợp với `SecureNotificationServer`, `KeychainHelper`, `QRCodeGenerator`.
+| `ContentView.swift` | Giao diện chính (SwiftUI) dùng `ServerViewModel` làm nguồn dữ liệu. Hiển thị QR, trạng thái, danh sách thiết bị, điều khiển. | Quan sát `ServerViewModel`.
+| `Assets.xcassets` | Tập tài nguyên (icons, images) dùng bởi UI và notifications. | Tài nguyên UI.
+| `android_to_mac_notification_bridge.entitlements` | Entitlements (quyền cần thiết: notifications, network, ...). | Cấu hình project.
+
+### Mối quan hệ tóm tắt
+
+| Từ | Tới | Mô tả |
+|---|---|---|
+| `ContentView` | `ServerViewModel` | `ContentView` quan sát (`@ObservedObject`) để cập nhật UI realtime.
+| `ServerViewModel` | `SecureNotificationServer` | `ServerViewModel` điều khiển lifecycle (start/stop) và nhận callback/trạng thái.
+| `SecureNotificationServer` | `NetworkUtils` | Sử dụng `NetworkUtils` để parse HTTP và xử lý `NWConnection`.
+| `SecureNotificationServer` | `KeychainHelper` | Lưu/đọc API key và AES key.
+| `SecureNotificationServer` | `NotificationPayload` → `NotificationDispatcher` | Sau khi giải mã, decode sang `NotificationPayload`, rồi truyền cho `NotificationDispatcher` để gửi notification.
+| `ServerViewModel` | `QRCodeGenerator` | Sinh `qrImage` từ `BridgeConfig` để hiển thị trong UI.
+
+Ví dụ luồng (khi nhận HTTP POST `/notify`):
+1. `SecureNotificationServer` nhận `NWConnection` → dùng `NetworkUtils` đọc body.
+2. Kiểm header `Authorization` với API key từ `KeychainHelper`.
+3. Giải mã AES-GCM (CryptoKit) → plaintext JSON.
+4. Decode vào `NotificationPayload` → gọi `NotificationDispatcher`.
+5. `NotificationDispatcher` gửi `UNNotification` → `ServerViewModel` cập nhật counters → `ContentView` hiển thị.
+
+### Gợi ý refactor / kiểm thử
+- Tách giao diện (protocol) cho `SecureNotificationServer` để dễ mock `ServerViewModel` khi viết unit tests.
+- Viết unit tests cho `NetworkUtils` (parse HTTP) và `NotificationPayload` (encode/decode).
+- Đưa logging ra service riêng (`Logger`) để giữ `SecureNotificationServer` gọn.
+
